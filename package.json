@@ -1,6 +1,6 @@
 {
 	"name": "@nooma-tech/n8n-nodes-aws-sqs",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "n8n nodes for AWS SQS integration",
 	"keywords": [
 		"n8n-community-node-package",
