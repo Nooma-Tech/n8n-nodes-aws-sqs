@@ -48,7 +48,7 @@ jobs:
           name: build-artifacts
           path: dist/
 
-  publish-npm:
+  publish:
     name: Publish to NPM
     needs: test
     runs-on: ubuntu-latest
@@ -80,48 +80,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  publish-github:
-    name: Publish to GitHub Packages
-    needs: test
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@nooma-tech'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-          path: dist/
-
-      - name: Create .npmrc for GitHub Packages
-        run: |
-          echo "@nooma-tech:registry=https://npm.pkg.github.com" > .npmrc
-          echo "//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}" >> .npmrc
-
-      - name: Publish to GitHub Packages
-        run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   release:
     name: Create GitHub Release
-    needs: [test, publish-npm, publish-github]
+    needs: [test, publish]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -160,7 +121,6 @@ jobs:
 
             ## Installation
 
-            ### From NPM (Recommended)
             Install directly from npm:
             ```bash
             npm install @nooma-tech/n8n-nodes-aws-sqs@${{ steps.version.outputs.VERSION }}
@@ -170,20 +130,6 @@ jobs:
             ```bash
             npm install @nooma-tech/n8n-nodes-aws-sqs
             ```
-
-            ### From GitHub Packages
-            Configure npm to use GitHub Packages:
-            ```bash
-            echo "@nooma-tech:registry=https://npm.pkg.github.com" >> ~/.npmrc
-            echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc
-            ```
-
-            Then install:
-            ```bash
-            npm install @nooma-tech/n8n-nodes-aws-sqs@${{ steps.version.outputs.VERSION }}
-            ```
-
-            **Note:** You need a GitHub Personal Access Token with `read:packages` scope for GitHub Packages.
 
             ## What's Included
 

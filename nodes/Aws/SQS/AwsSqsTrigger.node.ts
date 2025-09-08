@@ -12,7 +12,7 @@ export class AwsSqsTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'AWS SQS Trigger',
 		name: 'awsSqsTrigger',
-		icon: 'file:sqs.svg',
+		icon: 'file:awssqs.svg',
 		group: ['trigger'],
 		version: 1,
 		description: 'Starts the workflow when AWS SQS messages are received',
