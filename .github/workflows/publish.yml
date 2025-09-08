@@ -1,0 +1,146 @@
+name: Release and Publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run tests with coverage
+        run: npm test -- --coverage
+
+      - name: Check coverage threshold
+        run: |
+          echo "Checking code coverage..."
+          npm test -- --coverage --coverageThreshold='{"global":{"statements":80,"branches":70,"functions":75,"lines":80}}'
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+
+      - name: Build package
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: dist/
+
+  publish:
+    name: Publish to NPM
+    needs: test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: dist/
+
+      - name: Publish to NPM
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release:
+    name: Create GitHub Release
+    needs: [test, publish]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+            sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | head -n -1 >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "CHANGELOG=## Changes in v${VERSION}" >> $GITHUB_OUTPUT
+          fi
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release v${{ steps.version.outputs.VERSION }}
+          body: |
+            # n8n Nodes - AWS SQS v${{ steps.version.outputs.VERSION }}
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Installation
+
+            Install directly from npm:
+            ```bash
+            npm install @nooma-tech/n8n-nodes-aws-sqs@${{ steps.version.outputs.VERSION }}
+            ```
+
+            Or install the latest version:
+            ```bash
+            npm install @nooma-tech/n8n-nodes-aws-sqs
+            ```
+
+            ## What's Included
+
+            ### Trigger Nodes
+            - AWS SQS Trigger - Monitor SQS queues for new messages using polling
+
+            ## Features
+            - **Polling Trigger**: Automatically polls SQS queues for new messages
+            - **Message Processing**: Automatic JSON parsing and attribute handling
+            - **Auto Delete**: Optional automatic message deletion after processing
+            - **AWS SDK v3**: Built with the latest AWS SDK for optimal performance
+            - **Full Configuration**: Support for all SQS polling parameters
+          draft: false
+          prerelease: false
