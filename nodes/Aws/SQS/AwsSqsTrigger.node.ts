@@ -1,18 +1,25 @@
 import {
-	ITriggerFunctions,
-	ITriggerResponse,
+	IDataObject,
+	ILoadOptionsFunctions,
 	INodeExecutionData,
+	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
+	ITriggerFunctions,
+	ITriggerResponse,
+	JsonObject,
+	NodeApiError,
 	NodeConnectionType,
 	NodeOperationError,
 } from 'n8n-workflow';
-import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
 
-interface MessageTracker {
-	activeMessages: Map<string, any>;
-	closeRequested: boolean;
-}
+import {
+	SQSClient,
+	ReceiveMessageCommand,
+	DeleteMessageCommand,
+	DeleteMessageBatchCommand,
+	ListQueuesCommand,
+} from '@aws-sdk/client-sqs';
 
 export class AwsSqsTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -21,21 +28,10 @@ export class AwsSqsTrigger implements INodeType {
 		icon: 'file:awssqs.svg',
 		group: ['trigger'],
 		version: 1,
-		description: 'Starts the workflow when AWS SQS messages are received',
-		eventTriggerDescription: '',
+		subtitle: `={{$parameter["queue"]}}`,
+		description: 'Consume queue messages from AWS SQS',
 		defaults: {
-			name: 'AWS SQS',
-		},
-		triggerPanel: {
-			header: '',
-			executionsHelp: {
-				inactive:
-					"<b>While building your workflow</b>, click the 'execute step' button, then send a message to your SQS queue. This will trigger an execution, which will show up in this editor.<br /> <br /><b>Once you're happy with your workflow</b>, <a data-key='activate'>activate</a> it. Then every time a message is received, the workflow will execute. These executions will show up in the <a data-key='executions'>executions list</a>, but not in the editor.",
-				active:
-					"<b>While building your workflow</b>, click the 'execute step' button, then send a message to your SQS queue. This will trigger an execution, which will show up in this editor.<br /> <br /><b>Your workflow will also execute automatically</b>, since it's activated. Every time a message is received, this node will trigger an execution. These executions will show up in the <a data-key='executions'>executions list</a>, but not in the editor.",
-			},
-			activationHint:
-				"Once you've finished building your workflow, <a data-key='activate'>activate</a> it to have it also listen continuously (you just won't see those executions here).",
+			name: 'AWS SQS Trigger',
 		},
 		inputs: [],
 		outputs: [NodeConnectionType.Main],
@@ -47,92 +43,48 @@ export class AwsSqsTrigger implements INodeType {
 		],
 		properties: [
 			{
-				displayName: 'Queue URL',
-				name: 'queueUrl',
-				type: 'string',
+				displayName: 'Queue Name or ID',
+				name: 'queue',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getQueues',
+				},
+				options: [],
 				default: '',
 				required: true,
-				description: 'The URL of the SQS queue to monitor',
-				placeholder: 'https://sqs.region.amazonaws.com/account-ID/queue-name',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 			},
 			{
-				displayName: 'Max Number of Messages',
-				name: 'maxNumberOfMessages',
+				displayName: 'Interval',
+				name: 'interval',
 				type: 'number',
-				default: 10,
 				typeOptions: {
 					minValue: 1,
-					maxValue: 10,
 				},
-				description: 'Maximum number of messages to receive per poll (1-10)',
+				default: 1,
+				description: 'Interval value which the queue will be checked for new messages',
 			},
 			{
-				displayName: 'Visibility Timeout',
-				name: 'visibilityTimeout',
-				type: 'number',
-				default: 20,
-				typeOptions: {
-					minValue: 0,
-					maxValue: 43200,
-				},
-				description:
-					'The duration (in seconds) that the received messages are hidden from subsequent retrieve requests',
-			},
-			{
-				displayName: 'Wait Time Seconds',
-				name: 'waitTimeSeconds',
-				type: 'number',
-				default: 0,
-				typeOptions: {
-					minValue: 0,
-					maxValue: 20,
-				},
-				description:
-					'The duration (in seconds) for which the call waits for a message to arrive in the queue before returning',
-			},
-			{
-				displayName: 'Delete From Queue When',
-				name: 'acknowledge',
+				displayName: 'Unit',
+				name: 'unit',
 				type: 'options',
 				options: [
 					{
-						name: 'Execution Finishes',
-						value: 'executionFinishes',
-						description:
-							'After the workflow execution finished. No matter if the execution was successful or not.',
+						name: 'Seconds',
+						value: 'seconds',
 					},
 					{
-						name: 'Execution Finishes Successfully',
-						value: 'executionFinishesSuccessfully',
-						description: 'After the workflow execution finished successfully',
+						name: 'Minutes',
+						value: 'minutes',
 					},
 					{
-						name: 'Immediately',
-						value: 'immediately',
-						description: 'As soon as the message got received',
+						name: 'Hours',
+						value: 'hours',
 					},
 				],
-				default: 'immediately',
-				description: 'When to acknowledge the message',
-			},
-			{
-				displayName: 'Include Message Attributes',
-				name: 'includeMessageAttributes',
-				type: 'boolean',
-				default: true,
-				description: 'Whether to include message attributes in the output',
-			},
-			{
-				displayName: 'Parallel Message Processing Limit',
-				name: 'parallelMessages',
-				type: 'number',
-				default: -1,
-				displayOptions: {
-					hide: {
-						acknowledge: ['immediately'],
-					},
-				},
-				description: 'Max number of executions at a time. Use -1 for no limit.',
+				default: 'seconds',
+				description: 'Unit of the interval value',
 			},
 			{
 				displayName: 'Options',
@@ -144,284 +96,238 @@ export class AwsSqsTrigger implements INodeType {
 					{
 						displayName: 'Attribute Names',
 						name: 'attributeNames',
-						type: 'multiOptions',
-						options: [
-							{
-								name: 'All',
-								value: 'All',
-							},
-							{
-								name: 'Approximate First Receive Timestamp',
-								value: 'ApproximateFirstReceiveTimestamp',
-							},
-							{
-								name: 'Approximate Receive Count',
-								value: 'ApproximateReceiveCount',
-							},
-							{
-								name: 'AWS Trace Header',
-								value: 'AWSTraceHeader',
-							},
-							{
-								name: 'Message Deduplication ID',
-								value: 'MessageDeduplicationId',
-							},
-							{
-								name: 'Message Group ID',
-								value: 'MessageGroupId',
-							},
-							{
-								name: 'Sender ID',
-								value: 'SenderId',
-							},
-							{
-								name: 'Sent Timestamp',
-								value: 'SentTimestamp',
-							},
-							{
-								name: 'Sequence Number',
-								value: 'SequenceNumber',
-							},
-						],
-						default: ['All'],
-						description: 'List of attributes to retrieve',
+						type: 'string',
+						default: 'All',
+						description: 'Queue attribute names to retrieve. Use "All" to retrieve all attributes.',
+					},
+					{
+						displayName: 'Delete Messages',
+						name: 'deleteMessages',
+						type: 'boolean',
+						default: true,
+						description: 'Whether to delete messages after receiving them',
+					},
+					{
+						displayName: 'Max Number Of Messages',
+						name: 'maxNumberOfMessages',
+						type: 'number',
+						default: 1,
+						typeOptions: {
+							minValue: 1,
+							maxValue: 10,
+						},
+						description:
+							'Maximum number of messages to return. SQS never returns more messages than this value but might return fewer.',
 					},
 					{
 						displayName: 'Message Attribute Names',
 						name: 'messageAttributeNames',
 						type: 'string',
 						default: 'All',
-						description: 'Message attribute names to retrieve (comma-separated or "All")',
+						description:
+							'Message attribute names to retrieve. Use "All" to retrieve all attributes.',
+					},
+					{
+						displayName: 'Visibility Timeout',
+						name: 'visibilityTimeout',
+						type: 'number',
+						default: 30,
+						description:
+							'The duration (in seconds) that the received messages are hidden from subsequent retrieve requests after being retrieved by a receive message request',
+					},
+					{
+						displayName: 'Wait Time Seconds',
+						name: 'waitTimeSeconds',
+						type: 'number',
+						default: 0,
+						typeOptions: {
+							minValue: 0,
+							maxValue: 20,
+						},
+						description:
+							'Enable long-polling with a non-zero number of seconds. Maximum 20 seconds.',
 					},
 				],
 			},
 		],
 	};
 
+	methods = {
+		loadOptions: {
+			async getQueues(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				const credentials = await this.getCredentials('aws');
+
+				const sqsClient = new SQSClient({
+					region: credentials.region as string,
+					credentials: {
+						accessKeyId: credentials.accessKeyId as string,
+						secretAccessKey: credentials.secretAccessKey as string,
+						sessionToken: credentials.sessionToken as string,
+					},
+				});
+
+				try {
+					const command = new ListQueuesCommand({});
+					const response = await sqsClient.send(command);
+
+					if (!response.QueueUrls || response.QueueUrls.length === 0) {
+						return [];
+					}
+
+					return response.QueueUrls.map((queueUrl: string) => {
+						const urlParts = queueUrl.split('/');
+						const name = urlParts[urlParts.length - 1];
+
+						return {
+							name,
+							value: queueUrl,
+						};
+					});
+				} catch (error) {
+					throw new NodeApiError(this.getNode(), error as JsonObject);
+				} finally {
+					sqsClient.destroy();
+				}
+			},
+		},
+	};
+
 	async trigger(this: ITriggerFunctions): Promise<ITriggerResponse> {
-		const queueUrl = this.getNodeParameter('queueUrl') as string;
-		const maxNumberOfMessages = this.getNodeParameter('maxNumberOfMessages', 10) as number;
-		const visibilityTimeout = this.getNodeParameter('visibilityTimeout', 20) as number;
-		const waitTimeSeconds = this.getNodeParameter('waitTimeSeconds', 0) as number;
-		const acknowledge = this.getNodeParameter('acknowledge', 'immediately') as string;
-		const includeMessageAttributes = this.getNodeParameter(
-			'includeMessageAttributes',
-			true,
-		) as boolean;
-		const parallelMessages = this.getNodeParameter('parallelMessages', -1) as number;
-		const options = this.getNodeParameter('options', {}) as any;
+		const queueUrl = this.getNodeParameter('queue') as string;
+		const interval = this.getNodeParameter('interval') as number;
+		const unit = this.getNodeParameter('unit') as string;
+		const options = this.getNodeParameter('options', {}) as IDataObject;
+
+		if (interval <= 0) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'The interval has to be set to at least 1 or higher!',
+			);
+		}
+
+		if (options.waitTimeSeconds !== undefined) {
+			const waitTime = options.waitTimeSeconds as number;
+			if (waitTime < 0 || waitTime > 20) {
+				throw new NodeOperationError(this.getNode(), 'Wait Time Seconds must be between 0 and 20.');
+			}
+		}
+
+		let intervalValue = interval;
+		if (unit === 'minutes') {
+			intervalValue *= 60;
+		}
+		if (unit === 'hours') {
+			intervalValue *= 60 * 60;
+		}
+
+		intervalValue *= 1000;
+
+		if (intervalValue > 2147483647) {
+			throw new NodeApiError(this.getNode(), { message: 'The interval value is too large.' });
+		}
 
 		const credentials = await this.getCredentials('aws');
-
 		const sqsClient = new SQSClient({
 			region: credentials.region as string,
 			credentials: {
 				accessKeyId: credentials.accessKeyId as string,
 				secretAccessKey: credentials.secretAccessKey as string,
-				...(credentials.sessionToken && { sessionToken: credentials.sessionToken as string }),
+				sessionToken: credentials.sessionToken as string,
 			},
 		});
 
-		const messageTracker: MessageTracker = {
-			activeMessages: new Map(),
-			closeRequested: false,
-		};
-
-		let isPolling = false;
-
-		// Validate parallel messages setting
-		if (isNaN(parallelMessages) || parallelMessages === 0 || parallelMessages < -1) {
-			throw new NodeOperationError(
-				this.getNode(),
-				'Parallel message processing limit must be a number greater than zero (or -1 for no limit)',
-			);
-		}
-
-		const receiveParams: any = {
-			QueueUrl: queueUrl,
-			MaxNumberOfMessages: maxNumberOfMessages,
-			VisibilityTimeout: visibilityTimeout,
-			WaitTimeSeconds: waitTimeSeconds,
-		};
-
-		if (options.attributeNames && options.attributeNames.length > 0) {
-			receiveParams.AttributeNames = options.attributeNames;
-		}
-
-		if (includeMessageAttributes) {
-			const messageAttributeNames = options.messageAttributeNames || 'All';
-			if (messageAttributeNames === 'All') {
-				receiveParams.MessageAttributeNames = ['All'];
-			} else {
-				receiveParams.MessageAttributeNames = messageAttributeNames
-					.split(',')
-					.map((name: string) => name.trim());
-			}
-		}
-
-		const processMessage = async (message: any) => {
-			if (messageTracker.closeRequested) {
-				return;
-			}
-
-			const nodeExecutionData: INodeExecutionData = {
-				json: {
-					messageId: message.MessageId,
-					body: message.Body,
-					receiptHandle: message.ReceiptHandle,
-					md5OfBody: message.MD5OfBody,
-					attributes: message.Attributes || {},
-					messageAttributes: message.MessageAttributes || {},
-					timestamp: new Date().toISOString(),
-				},
-			};
-
+		const executeTrigger = async () => {
 			try {
-				const parsedBody = JSON.parse(message.Body || '{}');
-				nodeExecutionData.json.parsedBody = parsedBody;
-			} catch (error) {
-				nodeExecutionData.json.parsedBody = null;
-			}
+				const receiveParams: any = {
+					QueueUrl: queueUrl,
+					MessageAttributeNames: [(options.messageAttributeNames as string) || 'All'],
+					AttributeNames: [(options.attributeNames as string) || 'All'],
+				};
 
-			// Store message for potential cleanup
-			if (acknowledge !== 'immediately') {
-				messageTracker.activeMessages.set(message.MessageId, {
-					receiptHandle: message.ReceiptHandle,
-					queueUrl,
-				});
-			}
-
-			// Delete immediately if configured
-			if (acknowledge === 'immediately' && message.ReceiptHandle) {
-				try {
-					const deleteCommand = new DeleteMessageCommand({
-						QueueUrl: queueUrl,
-						ReceiptHandle: message.ReceiptHandle,
-					});
-					await sqsClient.send(deleteCommand);
-				} catch (deleteError) {
-					console.warn(`Failed to delete message ${message.MessageId}:`, deleteError);
-				}
-			}
-
-			// Emit the workflow trigger
-			this.emit([nodeExecutionData], undefined, {
-				executionFinished:
-					acknowledge === 'executionFinishes'
-						? async () => {
-								await this.deleteMessage(sqsClient, message.MessageId, messageTracker);
-							}
-						: undefined,
-				executionFinishedSuccessfully:
-					acknowledge === 'executionFinishesSuccessfully'
-						? async () => {
-								await this.deleteMessage(sqsClient, message.MessageId, messageTracker);
-							}
-						: undefined,
-			});
-		};
-
-		const pollForMessages = async () => {
-			if (messageTracker.closeRequested || isPolling) {
-				return;
-			}
-
-			isPolling = true;
-
-			try {
-				// Check parallel processing limit
-				if (parallelMessages !== -1 && messageTracker.activeMessages.size >= parallelMessages) {
-					return;
+				if (options.visibilityTimeout !== undefined) {
+					receiveParams.VisibilityTimeout = options.visibilityTimeout as number;
 				}
 
-				const command = new ReceiveMessageCommand(receiveParams);
-				const response = await sqsClient.send(command);
+				if (options.maxNumberOfMessages !== undefined) {
+					receiveParams.MaxNumberOfMessages = options.maxNumberOfMessages as number;
+				}
+
+				if (options.waitTimeSeconds !== undefined) {
+					receiveParams.WaitTimeSeconds = options.waitTimeSeconds as number;
+				}
+
+				const receiveCommand = new ReceiveMessageCommand(receiveParams);
+				const response = await sqsClient.send(receiveCommand);
 
 				if (response.Messages && response.Messages.length > 0) {
-					for (const message of response.Messages) {
-						await processMessage(message);
+					const returnMessages: INodeExecutionData[] = response.Messages.map((message) => {
+						let parsedBody;
+						try {
+							parsedBody = message.Body ? JSON.parse(message.Body) : {};
+						} catch {
+							parsedBody = message.Body;
+						}
+
+						return {
+							json: {
+								messageId: message.MessageId,
+								receiptHandle: message.ReceiptHandle,
+								body: message.Body,
+								parsedBody,
+								attributes: message.Attributes || {},
+								messageAttributes: message.MessageAttributes || {},
+								md5OfBody: message.MD5OfBody,
+								md5OfMessageAttributes: message.MD5OfMessageAttributes,
+							},
+						};
+					});
+
+					if (options.deleteMessages !== false) {
+						if (response.Messages.length === 1) {
+							const deleteCommand = new DeleteMessageCommand({
+								QueueUrl: queueUrl,
+								ReceiptHandle: response.Messages[0].ReceiptHandle,
+							});
+							await sqsClient.send(deleteCommand);
+						} else {
+							const deleteEntries = response.Messages.map((message, index) => ({
+								Id: `msg${index + 1}`,
+								ReceiptHandle: message.ReceiptHandle!,
+							}));
+
+							const deleteBatchCommand = new DeleteMessageBatchCommand({
+								QueueUrl: queueUrl,
+								Entries: deleteEntries,
+							});
+							await sqsClient.send(deleteBatchCommand);
+						}
 					}
+
+					this.emit([returnMessages]);
 				}
 			} catch (error) {
-				if (!messageTracker.closeRequested) {
-					this.emitError(
-						new NodeOperationError(
-							this.getNode(),
-							`Failed to receive messages from SQS queue: ${error instanceof Error ? error.message : String(error)}`,
-						),
-					);
-				}
-			} finally {
-				isPolling = false;
+				throw new NodeApiError(this.getNode(), error as JsonObject);
 			}
 		};
 
-		// Start continuous polling
-		const startPolling = () => {
-			if (!messageTracker.closeRequested) {
-				pollForMessages().finally(() => {
-					if (!messageTracker.closeRequested) {
-						setTimeout(startPolling, 1000); // Poll every second
-					}
-				});
+		let running = true;
+		let intervalObj = setTimeout(run, 0);
+
+		async function run() {
+			await executeTrigger();
+			if (running) {
+				intervalObj = setTimeout(run, intervalValue);
 			}
-		};
-
-		const closeFunction = async () => {
-			messageTracker.closeRequested = true;
-
-			// Clean up any remaining messages
-			for (const [messageId, messageData] of messageTracker.activeMessages.entries()) {
-				try {
-					const deleteCommand = new DeleteMessageCommand({
-						QueueUrl: messageData.queueUrl,
-						ReceiptHandle: messageData.receiptHandle,
-					});
-					await sqsClient.send(deleteCommand);
-				} catch (error) {
-					console.warn(`Failed to delete message ${messageId} during cleanup:`, error);
-				}
-			}
-			messageTracker.activeMessages.clear();
-		};
-
-		// Handle manual trigger mode
-		if (this.getMode() === 'manual') {
-			const manualTriggerFunction = async () => {
-				await pollForMessages();
-			};
-
-			return {
-				closeFunction,
-				manualTriggerFunction,
-			};
 		}
 
-		// Start continuous polling for active mode
-		startPolling();
+		async function closeFunction() {
+			running = false;
+			clearTimeout(intervalObj);
+			sqsClient.destroy();
+		}
 
 		return {
 			closeFunction,
 		};
-	}
-
-	private async deleteMessage(
-		sqsClient: SQSClient,
-		messageId: string,
-		messageTracker: MessageTracker,
-	) {
-		const messageData = messageTracker.activeMessages.get(messageId);
-		if (messageData) {
-			try {
-				const deleteCommand = new DeleteMessageCommand({
-					QueueUrl: messageData.queueUrl,
-					ReceiptHandle: messageData.receiptHandle,
-				});
-				await sqsClient.send(deleteCommand);
-				messageTracker.activeMessages.delete(messageId);
-			} catch (error) {
-				console.warn(`Failed to delete message ${messageId}:`, error);
-			}
-		}
 	}
 }

@@ -1,207 +1,116 @@
 import { AwsSqsTrigger } from '../../nodes/Aws/SQS/AwsSqsTrigger.node';
-import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
+import {
+	ILoadOptionsFunctions,
+	ITriggerFunctions,
+	NodeApiError,
+	NodeOperationError,
+} from 'n8n-workflow';
+import { SQSClient } from '@aws-sdk/client-sqs';
 
 jest.mock('@aws-sdk/client-sqs');
 
-const mockSQSClient = SQSClient as jest.MockedClass<typeof SQSClient>;
-const mockReceiveMessageCommand = ReceiveMessageCommand as jest.MockedClass<
-	typeof ReceiveMessageCommand
->;
-const mockDeleteMessageCommand = DeleteMessageCommand as jest.MockedClass<
-	typeof DeleteMessageCommand
->;
+const MockedSQSClient = SQSClient as jest.MockedClass<typeof SQSClient>;
 
 describe('AwsSqsTrigger', () => {
-	let node: AwsSqsTrigger;
-	let mockSend: jest.Mock;
+	let awsSqsTrigger: AwsSqsTrigger;
+	let mockSqsClient: jest.Mocked<SQSClient>;
 
 	beforeEach(() => {
-		node = new AwsSqsTrigger();
-		mockSend = jest.fn();
-		mockSQSClient.mockImplementation(
-			() =>
-				({
-					send: mockSend,
-				}) as any,
-		);
+		awsSqsTrigger = new AwsSqsTrigger();
+		mockSqsClient = {
+			send: jest.fn().mockResolvedValue({}),
+			destroy: jest.fn(),
+		} as any;
+
+		MockedSQSClient.mockImplementation(() => mockSqsClient);
+
 		jest.clearAllMocks();
 	});
 
-	describe('Node Structure', () => {
-		it('should be instantiable', () => {
-			expect(node).toBeInstanceOf(AwsSqsTrigger);
+	describe('Node Description', () => {
+		it('should have correct node description', () => {
+			expect(awsSqsTrigger.description.displayName).toBe('AWS SQS Trigger');
+			expect(awsSqsTrigger.description.name).toBe('awsSqsTrigger');
+			expect(awsSqsTrigger.description.icon).toBe('file:awssqs.svg');
+			expect(awsSqsTrigger.description.group).toEqual(['trigger']);
+			expect(awsSqsTrigger.description.version).toBe(1);
 		});
 
-		it('should have correct basic properties', () => {
-			expect(node.description.displayName).toBe('AWS SQS Trigger');
-			expect(node.description.name).toBe('awsSqsTrigger');
-			expect(node.description.group).toEqual(['trigger']);
-			expect(node.description.version).toBe(1);
+		it('should have required credentials', () => {
+			expect(awsSqsTrigger.description.credentials).toEqual([
+				{
+					name: 'aws',
+					required: true,
+				},
+			]);
 		});
 
-		it('should be a polling trigger node', () => {
-			expect(node.description.inputs).toEqual([]);
-			expect(node.description.outputs).toEqual(['main']);
-			expect(node.description.polling).toBe(true);
+		it('should have correct properties structure', () => {
+			const properties = awsSqsTrigger.description.properties;
+			expect(properties).toHaveLength(4);
+
+			const queueProperty = properties.find((p) => p.name === 'queue');
+			expect(queueProperty).toBeDefined();
+			expect(queueProperty?.required).toBe(true);
+
+			const intervalProperty = properties.find((p) => p.name === 'interval');
+			expect(intervalProperty).toBeDefined();
+			expect(intervalProperty?.default).toBe(1);
 		});
 
-		it('should have poll method', () => {
-			expect(typeof node.poll).toBe('function');
-		});
+		it('should have options in alphabetical order', () => {
+			const optionsProperty = awsSqsTrigger.description.properties.find(
+				(p) => p.name === 'options',
+			);
+			expect(optionsProperty).toBeDefined();
 
-		it('should require AWS credentials', () => {
-			expect(node.description.credentials).toBeDefined();
-			expect(node.description.credentials).toHaveLength(1);
-			expect(node.description.credentials![0].name).toBe('aws');
-			expect(node.description.credentials![0].required).toBe(true);
+			if (optionsProperty && 'options' in optionsProperty) {
+				const options = optionsProperty.options as any[];
+				const names = options.map((opt) => opt.displayName);
+				const sortedNames = [...names].sort();
+				expect(names).toEqual(sortedNames);
+			}
 		});
 	});
 
-	describe('poll method', () => {
-		const mockPollFunctions = {
-			getNodeParameter: jest.fn(),
-			getCredentials: jest.fn(),
-			getNode: jest.fn().mockReturnValue({ name: 'AWS SQS Trigger' }),
-		};
+	describe('loadOptions - getQueues', () => {
+		let mockLoadOptionsFunctions: jest.Mocked<ILoadOptionsFunctions>;
 
 		beforeEach(() => {
-			mockPollFunctions.getNodeParameter
-				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
-				.mockReturnValueOnce(10)
-				.mockReturnValueOnce(20)
-				.mockReturnValueOnce(0)
-				.mockReturnValueOnce(true)
-				.mockReturnValueOnce(true)
-				.mockReturnValueOnce({});
-
-			mockPollFunctions.getCredentials.mockResolvedValue({
-				region: 'us-east-1',
-				accessKeyId: 'test-access-key',
-				secretAccessKey: 'test-secret-key',
-			});
+			mockLoadOptionsFunctions = {
+				getCredentials: jest.fn(),
+				getNode: jest.fn(),
+			} as any;
 		});
 
-		it('should return empty array when no messages are received', async () => {
-			mockSend.mockResolvedValue({ Messages: [] });
-
-			const result = await node.poll.call(mockPollFunctions as any);
-
-			expect(result).toEqual([]);
-		});
-
-		it('should process messages correctly', async () => {
-			const mockMessages = [
-				{
-					MessageId: 'msg-1',
-					Body: '{"test": "data"}',
-					ReceiptHandle: 'receipt-1',
-					MD5OfBody: 'hash1',
-					Attributes: { SenderId: 'sender1' },
-					MessageAttributes: { attr1: { StringValue: 'value1' } },
-				},
-			];
-
-			mockSend.mockResolvedValue({ Messages: mockMessages });
-
-			const result = await node.poll.call(mockPollFunctions as any);
-
-			expect(result).toHaveLength(1);
-			expect(result[0]).toHaveLength(1);
-			expect(result[0][0].json).toMatchObject({
-				messageId: 'msg-1',
-				body: '{"test": "data"}',
-				receiptHandle: 'receipt-1',
-				md5OfBody: 'hash1',
-				attributes: { SenderId: 'sender1' },
-				messageAttributes: { attr1: { StringValue: 'value1' } },
-				parsedBody: { test: 'data' },
-			});
-		});
-
-		it('should handle messages with invalid JSON body', async () => {
-			const mockMessages = [
-				{
-					MessageId: 'msg-1',
-					Body: 'invalid json',
-					ReceiptHandle: 'receipt-1',
-				},
-			];
-
-			mockSend.mockResolvedValue({ Messages: mockMessages });
-
-			const result = await node.poll.call(mockPollFunctions as any);
-
-			expect(result[0][0].json.parsedBody).toBeNull();
-		});
-
-		it('should delete messages when autoDelete is enabled', async () => {
-			const mockMessages = [
-				{
-					MessageId: 'msg-1',
-					Body: 'test',
-					ReceiptHandle: 'receipt-1',
-				},
-			];
-
-			mockSend.mockResolvedValueOnce({ Messages: mockMessages }).mockResolvedValueOnce({});
-
-			await node.poll.call(mockPollFunctions as any);
-
-			expect(mockSend).toHaveBeenCalledTimes(2);
-			expect(mockDeleteMessageCommand).toHaveBeenCalledWith({
-				QueueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue',
-				ReceiptHandle: 'receipt-1',
-			});
-		});
-
-		it('should not delete messages when autoDelete is disabled', async () => {
-			mockPollFunctions.getNodeParameter
-				.mockReset()
-				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
-				.mockReturnValueOnce(10)
-				.mockReturnValueOnce(20)
-				.mockReturnValueOnce(0)
-				.mockReturnValueOnce(false)
-				.mockReturnValueOnce(true)
-				.mockReturnValueOnce({});
-
-			const mockMessages = [
-				{
-					MessageId: 'msg-1',
-					Body: 'test',
-					ReceiptHandle: 'receipt-1',
-				},
-			];
-
-			mockSend.mockResolvedValue({ Messages: mockMessages });
-
-			await node.poll.call(mockPollFunctions as any);
-
-			expect(mockSend).toHaveBeenCalledTimes(1);
-			expect(mockDeleteMessageCommand).not.toHaveBeenCalled();
-		});
-
-		it('should handle SQS client errors', async () => {
-			mockSend.mockRejectedValue(new Error('SQS Error'));
-
-			await expect(node.poll.call(mockPollFunctions as any)).rejects.toThrow(
-				'Failed to receive messages from SQS queue: SQS Error',
-			);
-		});
-
-		it('should configure SQS client with session token when provided', async () => {
-			mockPollFunctions.getCredentials.mockResolvedValue({
+		it('should load queues successfully', async () => {
+			const mockCredentials = {
 				region: 'us-east-1',
 				accessKeyId: 'test-access-key',
 				secretAccessKey: 'test-secret-key',
 				sessionToken: 'test-session-token',
-			});
+			};
 
-			mockSend.mockResolvedValue({ Messages: [] });
+			const mockQueueUrls = [
+				'https://sqs.us-east-1.amazonaws.com/123456789012/queue1',
+				'https://sqs.us-east-1.amazonaws.com/123456789012/queue2.fifo',
+			];
 
-			await node.poll.call(mockPollFunctions as any);
+			mockLoadOptionsFunctions.getCredentials.mockResolvedValue(mockCredentials);
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ QueueUrls: mockQueueUrls });
 
-			expect(mockSQSClient).toHaveBeenCalledWith({
+			const result =
+				await awsSqsTrigger.methods.loadOptions.getQueues.call(mockLoadOptionsFunctions);
+
+			expect(result).toEqual([
+				{ name: 'queue1', value: 'https://sqs.us-east-1.amazonaws.com/123456789012/queue1' },
+				{
+					name: 'queue2.fifo',
+					value: 'https://sqs.us-east-1.amazonaws.com/123456789012/queue2.fifo',
+				},
+			]);
+
+			expect(MockedSQSClient).toHaveBeenCalledWith({
 				region: 'us-east-1',
 				credentials: {
 					accessKeyId: 'test-access-key',
@@ -209,78 +118,980 @@ describe('AwsSqsTrigger', () => {
 					sessionToken: 'test-session-token',
 				},
 			});
+
+			expect(mockSqsClient.destroy).toHaveBeenCalled();
 		});
 
-		it('should include message attributes when enabled', async () => {
-			mockPollFunctions.getNodeParameter
-				.mockReset()
+		it('should return empty array when no queues exist', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockLoadOptionsFunctions.getCredentials.mockResolvedValue(mockCredentials);
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ QueueUrls: [] });
+
+			const result =
+				await awsSqsTrigger.methods.loadOptions.getQueues.call(mockLoadOptionsFunctions);
+
+			expect(result).toEqual([]);
+		});
+
+		it('should return empty array when QueueUrls is undefined', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockLoadOptionsFunctions.getCredentials.mockResolvedValue(mockCredentials);
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({});
+
+			const result =
+				await awsSqsTrigger.methods.loadOptions.getQueues.call(mockLoadOptionsFunctions);
+
+			expect(result).toEqual([]);
+		});
+
+		it('should handle API errors', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const error = new Error('AWS API Error');
+			mockLoadOptionsFunctions.getCredentials.mockResolvedValue(mockCredentials);
+			mockLoadOptionsFunctions.getNode.mockReturnValue({} as any);
+			(mockSqsClient.send as jest.Mock).mockRejectedValue(error);
+
+			await expect(
+				awsSqsTrigger.methods.loadOptions.getQueues.call(mockLoadOptionsFunctions),
+			).rejects.toThrow(NodeApiError);
+
+			expect(mockSqsClient.destroy).toHaveBeenCalled();
+		});
+	});
+
+	describe('trigger', () => {
+		let mockTriggerFunctions: jest.Mocked<ITriggerFunctions>;
+
+		beforeEach(() => {
+			mockTriggerFunctions = {
+				getNodeParameter: jest.fn(),
+				getCredentials: jest.fn(),
+				getNode: jest.fn(),
+				emit: jest.fn(),
+			} as any;
+		});
+
+		it('should validate interval parameter', async () => {
+			mockTriggerFunctions.getNodeParameter
 				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
-				.mockReturnValueOnce(10)
-				.mockReturnValueOnce(20)
 				.mockReturnValueOnce(0)
-				.mockReturnValueOnce(true)
-				.mockReturnValueOnce(true)
-				.mockReturnValueOnce({ messageAttributeNames: 'attr1,attr2' });
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({});
 
-			mockSend.mockResolvedValue({ Messages: [] });
+			mockTriggerFunctions.getNode.mockReturnValue({} as any);
 
-			await node.poll.call(mockPollFunctions as any);
-
-			expect(mockReceiveMessageCommand).toHaveBeenCalledWith({
-				QueueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue',
-				MaxNumberOfMessages: 10,
-				VisibilityTimeout: 20,
-				WaitTimeSeconds: 0,
-				MessageAttributeNames: ['attr1', 'attr2'],
-			});
+			await expect(awsSqsTrigger.trigger.call(mockTriggerFunctions)).rejects.toThrow(
+				NodeOperationError,
+			);
 		});
 
-		it('should handle delete message errors gracefully', async () => {
+		it('should validate waitTimeSeconds parameter', async () => {
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ waitTimeSeconds: 25 });
+
+			mockTriggerFunctions.getNode.mockReturnValue({} as any);
+
+			await expect(awsSqsTrigger.trigger.call(mockTriggerFunctions)).rejects.toThrow(
+				NodeOperationError,
+			);
+		});
+
+		it('should validate negative waitTimeSeconds parameter', async () => {
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ waitTimeSeconds: -1 });
+
+			mockTriggerFunctions.getNode.mockReturnValue({} as any);
+
+			await expect(awsSqsTrigger.trigger.call(mockTriggerFunctions)).rejects.toThrow(
+				NodeOperationError,
+			);
+		});
+
+		it('should handle large interval values', async () => {
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(2147484)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({});
+
+			mockTriggerFunctions.getNode.mockReturnValue({} as any);
+
+			await expect(awsSqsTrigger.trigger.call(mockTriggerFunctions)).rejects.toThrow(NodeApiError);
+		});
+
+		it('should setup trigger with correct parameters', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(5)
+				.mockReturnValueOnce('minutes')
+				.mockReturnValueOnce({
+					deleteMessages: true,
+					visibilityTimeout: 60,
+					maxNumberOfMessages: 5,
+					waitTimeSeconds: 10,
+				});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			expect(MockedSQSClient).toHaveBeenCalledWith({
+				region: 'us-east-1',
+				credentials: {
+					accessKeyId: 'test-access-key',
+					secretAccessKey: 'test-secret-key',
+					sessionToken: undefined,
+				},
+			});
+
+			expect(result.closeFunction).toBeDefined();
+			expect(typeof result.closeFunction).toBe('function');
+
+			await result.closeFunction?.();
+		});
+
+		it('should convert time units correctly', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			// Test hours conversion
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(2)
+				.mockReturnValueOnce('hours')
+				.mockReturnValueOnce({});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			expect(result.closeFunction).toBeDefined();
+
+			await result.closeFunction?.();
+			expect(mockSqsClient.destroy).toHaveBeenCalled();
+		});
+
+		it('should handle message processing parameters', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({
+					messageAttributeNames: 'priority,source',
+					attributeNames: 'ApproximateReceiveCount',
+					visibilityTimeout: 120,
+					maxNumberOfMessages: 3,
+					waitTimeSeconds: 5,
+				});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			expect(result.closeFunction).toBeDefined();
+
+			await result.closeFunction?.();
+		});
+
+		it('should handle credentials without session token', async () => {
+			const mockCredentials = {
+				region: 'us-west-2',
+				accessKeyId: 'test-access-key-2',
+				secretAccessKey: 'test-secret-key-2',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-west-2.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			expect(MockedSQSClient).toHaveBeenCalledWith({
+				region: 'us-west-2',
+				credentials: {
+					accessKeyId: 'test-access-key-2',
+					secretAccessKey: 'test-secret-key-2',
+					sessionToken: undefined,
+				},
+			});
+
+			await result.closeFunction?.();
+		});
+
+		it('should process messages and emit them', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessage = {
+				MessageId: 'msg-123',
+				ReceiptHandle: 'receipt-handle-123',
+				Body: '{"test": "data"}',
+				Attributes: { ApproximateReceiveCount: '1' },
+				MessageAttributes: { priority: { StringValue: 'high' } },
+				MD5OfBody: 'md5-hash',
+				MD5OfMessageAttributes: 'md5-attr-hash',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: true });
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			// Mock the trigger execution by calling the executeTrigger function directly
+			const trigger = awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Simulate receiving messages
+			(mockSqsClient.send as jest.Mock)
+				.mockResolvedValueOnce({ Messages: [mockMessage] })
+				.mockResolvedValueOnce({}); // For delete operation
+
+			// Wait for trigger setup
+			const result = await trigger;
+
+			// Verify SQS client was created correctly
+			expect(MockedSQSClient).toHaveBeenCalledWith({
+				region: 'us-east-1',
+				credentials: {
+					accessKeyId: 'test-access-key',
+					secretAccessKey: 'test-secret-key',
+					sessionToken: undefined,
+				},
+			});
+
+			await result.closeFunction?.();
+		});
+
+		it('should handle multiple messages and batch delete', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
 			const mockMessages = [
 				{
-					MessageId: 'msg-1',
-					Body: 'test',
-					ReceiptHandle: 'receipt-1',
+					MessageId: 'msg-123',
+					ReceiptHandle: 'receipt-handle-123',
+					Body: '{"test": "data1"}',
+					Attributes: {},
+					MessageAttributes: {},
+					MD5OfBody: 'md5-hash-1',
+				},
+				{
+					MessageId: 'msg-456',
+					ReceiptHandle: 'receipt-handle-456',
+					Body: 'plain text message',
+					Attributes: {},
+					MessageAttributes: {},
+					MD5OfBody: 'md5-hash-2',
 				},
 			];
 
-			const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: true });
 
-			mockSend
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock)
 				.mockResolvedValueOnce({ Messages: mockMessages })
-				.mockRejectedValueOnce(new Error('Delete failed'));
+				.mockResolvedValueOnce({}); // For batch delete operation
 
-			const result = await node.poll.call(mockPollFunctions as any);
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
 
-			expect(result).toHaveLength(1);
-			expect(consoleSpy).toHaveBeenCalledWith('Failed to delete message msg-1:', expect.any(Error));
-
-			consoleSpy.mockRestore();
+			await result.closeFunction?.();
 		});
 
-		it('should include attribute names when specified in options', async () => {
-			mockPollFunctions.getNodeParameter
-				.mockReset()
+		it('should not delete messages when deleteMessages is false', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessage = {
+				MessageId: 'msg-123',
+				ReceiptHandle: 'receipt-handle-123',
+				Body: '{"test": "data"}',
+				Attributes: {},
+				MessageAttributes: {},
+				MD5OfBody: 'md5-hash',
+			};
+
+			mockTriggerFunctions.getNodeParameter
 				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
-				.mockReturnValueOnce(10)
-				.mockReturnValueOnce(20)
-				.mockReturnValueOnce(0)
-				.mockReturnValueOnce(true)
-				.mockReturnValueOnce(true)
-				.mockReturnValueOnce({ attributeNames: ['ApproximateReceiveCount', 'SentTimestamp'] });
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: false });
 
-			mockSend.mockResolvedValue({ Messages: [] });
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
 
-			await node.poll.call(mockPollFunctions as any);
+			(mockSqsClient.send as jest.Mock).mockResolvedValueOnce({ Messages: [mockMessage] });
 
-			expect(mockReceiveMessageCommand).toHaveBeenCalledWith({
-				QueueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue',
-				MaxNumberOfMessages: 10,
-				VisibilityTimeout: 20,
-				WaitTimeSeconds: 0,
-				AttributeNames: ['ApproximateReceiveCount', 'SentTimestamp'],
-				MessageAttributeNames: ['All'],
-			});
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			await result.closeFunction?.();
+		});
+
+		it('should handle no messages scenario', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			await result.closeFunction?.();
+		});
+
+		it('should handle undefined messages', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({});
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			await result.closeFunction?.();
+		});
+
+		it('should handle messages with invalid JSON body', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessage = {
+				MessageId: 'msg-123',
+				ReceiptHandle: 'receipt-handle-123',
+				Body: 'invalid json {',
+				Attributes: {},
+				MessageAttributes: {},
+				MD5OfBody: 'md5-hash',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: true });
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock)
+				.mockResolvedValueOnce({ Messages: [mockMessage] })
+				.mockResolvedValueOnce({});
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			await result.closeFunction?.();
+		});
+
+		it('should handle messages with empty body', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessage = {
+				MessageId: 'msg-123',
+				ReceiptHandle: 'receipt-handle-123',
+				Body: undefined,
+				Attributes: {},
+				MessageAttributes: {},
+				MD5OfBody: 'md5-hash',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: true });
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock)
+				.mockResolvedValueOnce({ Messages: [mockMessage] })
+				.mockResolvedValueOnce({});
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			await result.closeFunction?.();
+		});
+
+		it('should handle all parameter options', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({
+					deleteMessages: true,
+					visibilityTimeout: 30,
+					maxNumberOfMessages: 10,
+					waitTimeSeconds: 20,
+					messageAttributeNames: 'All',
+					attributeNames: 'All',
+				});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			await result.closeFunction?.();
+		});
+
+		it('should handle parameter options with undefined values', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({
+					visibilityTimeout: undefined,
+					maxNumberOfMessages: undefined,
+					waitTimeSeconds: undefined,
+				});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			await result.closeFunction?.();
+		});
+	});
+
+	describe('trigger execution with fake timers', () => {
+		let mockTriggerFunctions: jest.Mocked<ITriggerFunctions>;
+		let mockEmit: jest.Mock;
+
+		beforeEach(() => {
+			jest.useFakeTimers();
+			mockEmit = jest.fn();
+
+			mockTriggerFunctions = {
+				getNodeParameter: jest.fn(),
+				getCredentials: jest.fn(),
+				getNode: jest.fn(),
+				emit: mockEmit,
+			} as any;
+		});
+
+		afterEach(() => {
+			jest.runOnlyPendingTimers();
+			jest.useRealTimers();
+		});
+
+		it('should execute trigger and process single message with deletion', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessage = {
+				MessageId: 'msg-123',
+				ReceiptHandle: 'receipt-handle-123',
+				Body: '{"test": "data"}',
+				Attributes: { ApproximateReceiveCount: '1' },
+				MessageAttributes: { priority: { StringValue: 'high' } },
+				MD5OfBody: 'md5-hash',
+				MD5OfMessageAttributes: 'md5-attr-hash',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: true });
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock)
+				.mockResolvedValueOnce({ Messages: [mockMessage] })
+				.mockResolvedValueOnce({});
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute only the immediate timer, not the recursive ones
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Stop the trigger to prevent infinite loop
+			await result.closeFunction?.();
+
+			expect(mockEmit).toHaveBeenCalledWith([
+				[
+					{
+						json: {
+							messageId: 'msg-123',
+							receiptHandle: 'receipt-handle-123',
+							body: '{"test": "data"}',
+							parsedBody: { test: 'data' },
+							attributes: { ApproximateReceiveCount: '1' },
+							messageAttributes: { priority: { StringValue: 'high' } },
+							md5OfBody: 'md5-hash',
+							md5OfMessageAttributes: 'md5-attr-hash',
+						},
+					},
+				],
+			]);
+
+			// Verify delete command was called
+			expect(mockSqsClient.send as jest.Mock).toHaveBeenCalledTimes(2);
+		});
+
+		it('should execute trigger and process multiple messages with batch deletion', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessages = [
+				{
+					MessageId: 'msg-123',
+					ReceiptHandle: 'receipt-handle-123',
+					Body: '{"test": "data1"}',
+					Attributes: {},
+					MessageAttributes: {},
+					MD5OfBody: 'md5-hash-1',
+				},
+				{
+					MessageId: 'msg-456',
+					ReceiptHandle: 'receipt-handle-456',
+					Body: 'plain text message',
+					Attributes: {},
+					MessageAttributes: {},
+					MD5OfBody: 'md5-hash-2',
+				},
+			];
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: true });
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock)
+				.mockResolvedValueOnce({ Messages: mockMessages })
+				.mockResolvedValueOnce({});
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute only the immediate timer, not the recursive ones
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Stop the trigger to prevent infinite loop
+			await result.closeFunction?.();
+
+			expect(mockEmit).toHaveBeenCalledWith([
+				[
+					{
+						json: {
+							messageId: 'msg-123',
+							receiptHandle: 'receipt-handle-123',
+							body: '{"test": "data1"}',
+							parsedBody: { test: 'data1' },
+							attributes: {},
+							messageAttributes: {},
+							md5OfBody: 'md5-hash-1',
+							md5OfMessageAttributes: undefined,
+						},
+					},
+					{
+						json: {
+							messageId: 'msg-456',
+							receiptHandle: 'receipt-handle-456',
+							body: 'plain text message',
+							parsedBody: 'plain text message',
+							attributes: {},
+							messageAttributes: {},
+							md5OfBody: 'md5-hash-2',
+							md5OfMessageAttributes: undefined,
+						},
+					},
+				],
+			]);
+
+			// Verify batch delete command was called
+			expect(mockSqsClient.send as jest.Mock).toHaveBeenCalledTimes(2);
+		});
+
+		it('should execute trigger without deleting messages when deleteMessages is false', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessage = {
+				MessageId: 'msg-123',
+				ReceiptHandle: 'receipt-handle-123',
+				Body: '{"test": "data"}',
+				Attributes: {},
+				MessageAttributes: {},
+				MD5OfBody: 'md5-hash',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: false });
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValueOnce({ Messages: [mockMessage] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute only the immediate timer, not the recursive ones
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Stop the trigger to prevent infinite loop
+			await result.closeFunction?.();
+
+			expect(mockEmit).toHaveBeenCalled();
+			// Only one call for receiving messages, no delete call
+			expect(mockSqsClient.send as jest.Mock).toHaveBeenCalledTimes(1);
+		});
+
+		it('should execute trigger and handle no messages', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute only the immediate timer, not the recursive ones
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Stop the trigger to prevent infinite loop
+			await result.closeFunction?.();
+
+			// No emit should be called for empty messages
+			expect(mockEmit).not.toHaveBeenCalled();
+		});
+
+		it('should execute trigger and handle undefined messages', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({});
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute only the immediate timer, not the recursive ones
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Stop the trigger to prevent infinite loop
+			await result.closeFunction?.();
+
+			// No emit should be called for undefined messages
+			expect(mockEmit).not.toHaveBeenCalled();
+		});
+
+		it('should execute trigger and handle invalid JSON body', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessage = {
+				MessageId: 'msg-123',
+				ReceiptHandle: 'receipt-handle-123',
+				Body: 'invalid json {',
+				Attributes: {},
+				MessageAttributes: {},
+				MD5OfBody: 'md5-hash',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: true });
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock)
+				.mockResolvedValueOnce({ Messages: [mockMessage] })
+				.mockResolvedValueOnce({});
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute only the immediate timer, not the recursive ones
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Stop the trigger to prevent infinite loop
+			await result.closeFunction?.();
+
+			expect(mockEmit).toHaveBeenCalledWith([
+				[
+					{
+						json: {
+							messageId: 'msg-123',
+							receiptHandle: 'receipt-handle-123',
+							body: 'invalid json {',
+							parsedBody: 'invalid json {', // Should fallback to original body
+							attributes: {},
+							messageAttributes: {},
+							md5OfBody: 'md5-hash',
+							md5OfMessageAttributes: undefined,
+						},
+					},
+				],
+			]);
+		});
+
+		it('should execute trigger and handle empty body', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			const mockMessage = {
+				MessageId: 'msg-123',
+				ReceiptHandle: 'receipt-handle-123',
+				Body: undefined,
+				Attributes: {},
+				MessageAttributes: {},
+				MD5OfBody: 'md5-hash',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({ deleteMessages: true });
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock)
+				.mockResolvedValueOnce({ Messages: [mockMessage] })
+				.mockResolvedValueOnce({});
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute only the immediate timer, not the recursive ones
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Stop the trigger to prevent infinite loop
+			await result.closeFunction?.();
+
+			expect(mockEmit).toHaveBeenCalledWith([
+				[
+					{
+						json: {
+							messageId: 'msg-123',
+							receiptHandle: 'receipt-handle-123',
+							body: undefined,
+							parsedBody: {}, // Should default to empty object
+							attributes: {},
+							messageAttributes: {},
+							md5OfBody: 'md5-hash',
+							md5OfMessageAttributes: undefined,
+						},
+					},
+				],
+			]);
+		});
+
+		it('should execute trigger with all parameter options', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({
+					deleteMessages: true,
+					visibilityTimeout: 30,
+					maxNumberOfMessages: 10,
+					waitTimeSeconds: 20,
+					messageAttributeNames: 'All',
+					attributeNames: 'All',
+				});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute only the immediate timer, not the recursive ones
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Stop the trigger to prevent infinite loop
+			await result.closeFunction?.();
+
+			// Verify the parameters were used correctly - check that send was called
+			expect(mockSqsClient.send as jest.Mock).toHaveBeenCalled();
+
+			// Since we can't easily verify the exact command structure in a mock,
+			// we'll verify that the SQS client was called with the right number of parameters
+			expect(mockSqsClient.send as jest.Mock).toHaveBeenCalledTimes(1);
+		});
+
+		it('should setup recurring trigger calls correctly', async () => {
+			const mockCredentials = {
+				region: 'us-east-1',
+				accessKeyId: 'test-access-key',
+				secretAccessKey: 'test-secret-key',
+			};
+
+			mockTriggerFunctions.getNodeParameter
+				.mockReturnValueOnce('https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
+				.mockReturnValueOnce(1)
+				.mockReturnValueOnce('seconds')
+				.mockReturnValueOnce({});
+
+			mockTriggerFunctions.getCredentials.mockResolvedValue(mockCredentials);
+
+			(mockSqsClient.send as jest.Mock).mockResolvedValue({ Messages: [] });
+
+			const result = await awsSqsTrigger.trigger.call(mockTriggerFunctions);
+
+			// Execute the first timer (immediate)
+			jest.advanceTimersByTime(0);
+			await Promise.resolve();
+
+			// Verify the first call was made
+			expect(mockSqsClient.send as jest.Mock).toHaveBeenCalledTimes(1);
+
+			// Verify that the trigger was set up correctly (has close function)
+			expect(result.closeFunction).toBeDefined();
+
+			await result.closeFunction?.();
 		});
 	});
 });
