@@ -204,7 +204,10 @@ export class AwsSqsTrigger implements INodeType {
 		const visibilityTimeout = this.getNodeParameter('visibilityTimeout', 20) as number;
 		const waitTimeSeconds = this.getNodeParameter('waitTimeSeconds', 0) as number;
 		const acknowledge = this.getNodeParameter('acknowledge', 'immediately') as string;
-		const includeMessageAttributes = this.getNodeParameter('includeMessageAttributes', true) as boolean;
+		const includeMessageAttributes = this.getNodeParameter(
+			'includeMessageAttributes',
+			true,
+		) as boolean;
 		const parallelMessages = this.getNodeParameter('parallelMessages', -1) as number;
 		const options = this.getNodeParameter('options', {}) as any;
 
@@ -250,7 +253,9 @@ export class AwsSqsTrigger implements INodeType {
 			if (messageAttributeNames === 'All') {
 				receiveParams.MessageAttributeNames = ['All'];
 			} else {
-				receiveParams.MessageAttributeNames = messageAttributeNames.split(',').map((name: string) => name.trim());
+				receiveParams.MessageAttributeNames = messageAttributeNames
+					.split(',')
+					.map((name: string) => name.trim());
 			}
 		}
 
@@ -301,12 +306,18 @@ export class AwsSqsTrigger implements INodeType {
 
 			// Emit the workflow trigger
 			this.emit([nodeExecutionData], undefined, {
-				executionFinished: acknowledge === 'executionFinishes' ? async () => {
-					await this.deleteMessage(sqsClient, message.MessageId, messageTracker);
-				} : undefined,
-				executionFinishedSuccessfully: acknowledge === 'executionFinishesSuccessfully' ? async () => {
-					await this.deleteMessage(sqsClient, message.MessageId, messageTracker);
-				} : undefined,
+				executionFinished:
+					acknowledge === 'executionFinishes'
+						? async () => {
+								await this.deleteMessage(sqsClient, message.MessageId, messageTracker);
+							}
+						: undefined,
+				executionFinishedSuccessfully:
+					acknowledge === 'executionFinishesSuccessfully'
+						? async () => {
+								await this.deleteMessage(sqsClient, message.MessageId, messageTracker);
+							}
+						: undefined,
 			});
 		};
 
@@ -333,10 +344,12 @@ export class AwsSqsTrigger implements INodeType {
 				}
 			} catch (error) {
 				if (!messageTracker.closeRequested) {
-					this.emitError(new NodeOperationError(
-						this.getNode(),
-						`Failed to receive messages from SQS queue: ${error instanceof Error ? error.message : String(error)}`,
-					));
+					this.emitError(
+						new NodeOperationError(
+							this.getNode(),
+							`Failed to receive messages from SQS queue: ${error instanceof Error ? error.message : String(error)}`,
+						),
+					);
 				}
 			} finally {
 				isPolling = false;
@@ -392,7 +405,11 @@ export class AwsSqsTrigger implements INodeType {
 		};
 	}
 
-	private async deleteMessage(sqsClient: SQSClient, messageId: string, messageTracker: MessageTracker) {
+	private async deleteMessage(
+		sqsClient: SQSClient,
+		messageId: string,
+		messageTracker: MessageTracker,
+	) {
 		const messageData = messageTracker.activeMessages.get(messageId);
 		if (messageData) {
 			try {
