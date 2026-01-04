@@ -81,7 +81,7 @@ You need to authenticate with AWS using standard AWS credentials. Prerequisites 
 			"Effect": "Allow",
 			"Action": [
 				"sqs:ListQueues",
-				"sqs:ReceiveMessage", 
+				"sqs:ReceiveMessage",
 				"sqs:DeleteMessage",
 				"sqs:DeleteMessageBatch",
 				"sqs:GetQueueAttributes"
@@ -99,6 +99,7 @@ You need to authenticate with AWS using standard AWS credentials. Prerequisites 
 The trigger node polls SQS queues at regular intervals and processes new messages with high performance and reliability.
 
 **✨ Key Features:**
+
 - **Dynamic Queue Selection**: Choose from a dropdown of your AWS SQS queues
 - **Smart Polling**: Configurable intervals with units (seconds/minutes/hours)
 - **Batch Processing**: Handle 1-10 messages per poll with optimized batch operations
@@ -212,14 +213,27 @@ Each message becomes a separate workflow execution with:
 
 ## Version History
 
+### 2.0.1 (2026-01-04) - 🔒 Security Patch
+
+#### 🔒 Security
+
+- **Dependency Updates**: Updated all development dependencies to address security vulnerabilities
+- **AWS SDK Update**: Updated `@aws-sdk/client-sqs` to v3.962.0 with latest security patches
+
+#### 🔧 Technical Improvements
+
+- **n8n Compatibility Fix**: Updated `NodeConnectionType` to `NodeConnectionTypes` for compatibility with latest n8n versions
+
 ### 2.0.0 (2024-12-19) - 🚀 Major Release
 
 #### ⚡ Breaking Changes
+
 - **AWS SDK v3 Migration**: Upgraded from legacy SDK to modern v3 architecture
 - **Enhanced Performance**: Reduced bundle size and improved tree-shaking
 - **Security Improvements**: Latest AWS SDK with enhanced security features
 
 #### ✨ New Features
+
 - **Complete AWS SDK v3 Integration**: Using `@aws-sdk/client-sqs` v3.705.0
 - **Dynamic Queue Loading**: Dropdown selection of AWS SQS queues
 - **Enhanced Message Processing**: Improved JSON parsing with intelligent fallback
@@ -228,6 +242,7 @@ Each message becomes a separate workflow execution with:
 - **Better Error Handling**: More descriptive error messages and handling
 
 #### 🧪 Quality Improvements
+
 - **97.29% Test Coverage**: Comprehensive test suite with 34 test cases
 - **100% Function Coverage**: All functions thoroughly tested
 - **Advanced Testing**: Fake timer testing for async trigger functionality
@@ -235,6 +250,7 @@ Each message becomes a separate workflow execution with:
 - **Zero Linting Errors**: Strict code quality standards
 
 #### 🔧 Technical Enhancements
+
 - **Memory Leak Prevention**: Proper cleanup of timers and resources
 - **Improved Timer Management**: Better handling of polling intervals
 - **Resource Cleanup**: Automatic SQS client destruction
@@ -244,6 +260,7 @@ Each message becomes a separate workflow execution with:
 ### 1.0.0 (2024-12-19) - Initial Release
 
 #### Core Features
+
 - AWS SQS Trigger with polling functionality
 - Message processing with JSON parsing
 - Configurable polling intervals and timeouts

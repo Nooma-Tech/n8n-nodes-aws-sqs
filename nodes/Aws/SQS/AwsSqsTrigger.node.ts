@@ -9,7 +9,7 @@ import {
 	ITriggerResponse,
 	JsonObject,
 	NodeApiError,
-	NodeConnectionType,
+	NodeConnectionTypes,
 	NodeOperationError,
 } from 'n8n-workflow';
 
@@ -34,7 +34,7 @@ export class AwsSqsTrigger implements INodeType {
 			name: 'AWS SQS Trigger',
 		},
 		inputs: [],
-		outputs: [NodeConnectionType.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'aws',
