@@ -1,6 +1,6 @@
 {
 	"name": "@nooma-tech/n8n-nodes-aws-sqs",
-	"version": "2.0.3",
+	"version": "2.0.4",
 	"description": "n8n nodes for AWS SQS integration",
 	"keywords": [
 		"n8n-community-node-package",
@@ -19,10 +19,10 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Nooma-Tech/n8n-nodes-aws-sqs.git"
+		"url": "git+https://github.com/Nooma-Tech/n8n-nodes-aws-sqs.git"
 	},
 	"engines": {
-		"node": ">=20"
+		"node": ">=22"
 	},
 	"main": "index.js",
 	"scripts": {
