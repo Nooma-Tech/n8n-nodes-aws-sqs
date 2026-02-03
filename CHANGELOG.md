@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-02-03
+
+### 🔒 Security
+
+- **ESLint 9 Migration** - Migrated from ESLint 8 to ESLint 9 to eliminate security vulnerabilities
+  - Removed deprecated `eslint-plugin-n8n-nodes-base` (required ESLint < 9)
+  - Removed `@typescript-eslint/parser` (bundled in typescript-eslint)
+  - Added `@n8n/eslint-plugin-community-nodes` ^0.7.0 (official n8n plugin for ESLint 9)
+  - Updated `eslint` to ^9.21.0
+  - Added `typescript-eslint` ^8.54.0
+- **AWS SDK Security Fix** - Updated AWS SDK dependencies to resolve high severity vulnerabilities in fast-xml-parser
+
+### 🔧 Technical Improvements
+
+- **ESLint Flat Config** - Migrated to ESLint 9 flat config format (`eslint.config.mjs`)
+- **Improved Type Safety** - Replaced `any` type with proper `ReceiveMessageCommandInput` and `QueueAttributeName` types from AWS SDK
+- **Removed Legacy Files** - Deleted `.eslintrc.js` and `.eslintrc.prepublish.js`
+
 ## [2.0.1] - 2026-01-04
 
 ### 🔒 Security

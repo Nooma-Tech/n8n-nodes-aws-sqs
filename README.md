@@ -213,6 +213,19 @@ Each message becomes a separate workflow execution with:
 
 ## Version History
 
+### 2.0.2 (2026-02-03) - 🔒 Security & ESLint 9 Migration
+
+#### 🔒 Security
+
+- **ESLint 9 Migration**: Migrated from ESLint 8 to ESLint 9 to eliminate security vulnerabilities
+- **AWS SDK Security Fix**: Updated AWS SDK dependencies to resolve high severity vulnerabilities
+
+#### 🔧 Technical Improvements
+
+- **ESLint Flat Config**: Migrated to modern ESLint 9 flat config format
+- **Improved Type Safety**: Enhanced TypeScript types with proper AWS SDK types
+- **New ESLint Plugin**: Using official `@n8n/eslint-plugin-community-nodes`
+
 ### 2.0.1 (2026-01-04) - 🔒 Security Patch
 
 #### 🔒 Security

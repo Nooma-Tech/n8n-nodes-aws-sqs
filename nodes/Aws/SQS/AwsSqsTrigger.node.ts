@@ -19,8 +19,11 @@ import {
 	DeleteMessageCommand,
 	DeleteMessageBatchCommand,
 	ListQueuesCommand,
+	ReceiveMessageCommandInput,
+	QueueAttributeName,
 } from '@aws-sdk/client-sqs';
 
+/* eslint-disable @n8n/community-nodes/no-credential-reuse */
 export class AwsSqsTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'AWS SQS Trigger',
@@ -150,6 +153,7 @@ export class AwsSqsTrigger implements INodeType {
 				],
 			},
 		],
+		usableAsTool: true,
 	};
 
 	methods = {
@@ -238,10 +242,10 @@ export class AwsSqsTrigger implements INodeType {
 
 		const executeTrigger = async () => {
 			try {
-				const receiveParams: any = {
+				const receiveParams: ReceiveMessageCommandInput = {
 					QueueUrl: queueUrl,
 					MessageAttributeNames: [(options.messageAttributeNames as string) || 'All'],
-					AttributeNames: [(options.attributeNames as string) || 'All'],
+					AttributeNames: [((options.attributeNames as string) || 'All') as QueueAttributeName],
 				};
 
 				if (options.visibilityTimeout !== undefined) {
