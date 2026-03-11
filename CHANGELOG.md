@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7] - 2026-03-10
+
+### 🔒 Security
+
+- **Critical Dependencies Update** - Fixed 5 security vulnerabilities
+  - Updated `fast-xml-parser` to resolve critical entity encoding bypass and DoS vulnerabilities (GHSA-m7jm-9gc2-mpf2, GHSA-jmr7-xgp7-cmfj, GHSA-fj3w-jwp8-x2g3)
+  - Updated `@aws-sdk/xml-builder` to version not dependent on vulnerable fast-xml-parser
+  - Updated `minimatch` to fix high severity ReDoS vulnerabilities (GHSA-3ppc-4f35-3m26, GHSA-7r86-cg39-jmmj, GHSA-23c5-xmqv-rm74)
+  - Updated `ajv` to fix moderate ReDoS vulnerability (GHSA-2g4f-4pwh-qvx6)
+  - Updated `svgo` to fix high severity DoS through entity expansion (GHSA-xpqw-6gx7-v673)
+
 ## [2.0.2] - 2026-02-03
 
 ### 🔒 Security
