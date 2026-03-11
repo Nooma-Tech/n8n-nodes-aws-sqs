@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.8] - 2026-03-10
+
+### 🔧 Dependencies
+
+- **ESLint 10 Migration** - Updated to ESLint 10.0.0 (major version update)
+- **Updated Dependencies:**
+  - `@aws-sdk/client-sqs` 3.982.0 → 3.990.0
+  - `@types/node` 25.2.0 → 25.2.3
+  - `n8n-workflow` 2.7.0 → 2.8.0
+  - `prettier` 3.7.4 → 3.8.1
+  - `eslint` 9.39.2 → 10.0.0
+  - `typescript-eslint` 8.54.0 → 8.57.0
+  - `@n8n/eslint-plugin-community-nodes` 0.7.0 → 0.9.0
+
 ## [2.0.7] - 2026-03-10
 
 ### 🔒 Security
