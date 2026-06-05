@@ -59,7 +59,7 @@
 		"prettier": "^3.0.0",
 		"ts-jest": "^29.4.6",
 		"typescript": "^5.8.2",
-		"typescript-eslint": "^8.57.0"
+		"typescript-eslint": "^8.60.1"
 	},
 	"overrides": {
 		"form-data": "^4.0.4"
