@@ -1,6 +1,6 @@
 {
-	"name": "@pentatonicdev/n8n-nodes-aws-sqs",
-	"version": "2.0.9",
+	"name": "@pentatonic-dev/n8n-nodes-aws-sqs",
+	"version": "2.0.10",
 	"description": "n8n nodes for AWS SQS integration",
 	"keywords": [
 		"n8n-community-node-package",
@@ -65,7 +65,6 @@
 		"form-data": "^4.0.4"
 	},
 	"publishConfig": {
-		"registry": "https://npm.pkg.github.com",
-		"access": "restricted"
+		"access": "public"
 	}
 }
