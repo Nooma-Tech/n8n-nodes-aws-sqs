@@ -1,7 +1,7 @@
 # n8n-nodes-aws-sqs
 
-[![npm version](https://badge.fury.io/js/@nooma-tech%2Fn8n-nodes-aws-sqs.svg)](https://www.npmjs.com/package/@nooma-tech/n8n-nodes-aws-sqs)
-[![Test Coverage](https://img.shields.io/badge/coverage-97.29%25-brightgreen)](https://github.com/Nooma-Tech/n8n-nodes-aws-sqs)
+[![GitHub Packages](https://img.shields.io/badge/GitHub%20Packages-published-blue)](https://github.com/PentatonicDev/n8n-nodes-aws-sqs/pkgs/npm/n8n-nodes-aws-sqs)
+[![Test Coverage](https://img.shields.io/badge/coverage-97.29%25-brightgreen)](https://github.com/PentatonicDev/n8n-nodes-aws-sqs)
 [![AWS SDK](https://img.shields.io/badge/AWS%20SDK-v3-orange)](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/)
 
 This is a high-performance n8n community node for AWS SQS integration. Built with AWS SDK v3 for optimal performance and modern JavaScript features.
@@ -27,15 +27,23 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 Install directly from n8n:
 
 1. Go to **Settings** > **Community Nodes**
-2. Select **Install** and enter `@nooma-tech/n8n-nodes-aws-sqs`
+2. Select **Install** and enter `@pentatonicdev/n8n-nodes-aws-sqs`
 
 ### Manual Installation
 
+For private GitHub packages, you'll need to authenticate with GitHub Packages:
+
 ```bash
-npm install @nooma-tech/n8n-nodes-aws-sqs
+npm login --scope=@pentatonicdev --registry=https://npm.pkg.github.com
 ```
 
-The package is published to the public npm registry for easy installation.
+Then install the package:
+
+```bash
+npm install @pentatonicdev/n8n-nodes-aws-sqs
+```
+
+The package is published to GitHub Packages.
 
 ## Operations
 

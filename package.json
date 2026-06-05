@@ -1,5 +1,5 @@
 {
-	"name": "@nooma-tech/n8n-nodes-aws-sqs",
+	"name": "@pentatonicdev/n8n-nodes-aws-sqs",
 	"version": "2.0.8",
 	"description": "n8n nodes for AWS SQS integration",
 	"keywords": [
@@ -14,12 +14,12 @@
 	"private": false,
 	"license": "MIT",
 	"author": {
-		"name": "Nooma Tech",
-		"email": "contato@nooma.tech"
+		"name": "Pentatonic",
+		"email": "hello@pentatonic.dev"
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/Nooma-Tech/n8n-nodes-aws-sqs.git"
+		"url": "git+https://github.com/PentatonicDev/n8n-nodes-aws-sqs.git"
 	},
 	"engines": {
 		"node": ">=22"
@@ -65,6 +65,7 @@
 		"form-data": "^4.0.4"
 	},
 	"publishConfig": {
-		"access": "public"
+		"registry": "https://npm.pkg.github.com",
+		"access": "restricted"
 	}
 }
