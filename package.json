@@ -1,6 +1,6 @@
 {
 	"name": "@pentatonic-dev/n8n-nodes-aws-sqs",
-	"version": "2.0.10",
+	"version": "2.0.11",
 	"description": "n8n nodes for AWS SQS integration",
 	"keywords": [
 		"n8n-community-node-package",
